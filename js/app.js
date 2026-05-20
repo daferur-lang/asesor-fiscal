@@ -256,7 +256,7 @@ const App = {
           <div class="desglose-fila">
             <span>Retención actual en nómina</span>
             <strong>${fmt(res.retencionPagada)} €
-              <em>(${fmtPorc(res.datos?.retencionActual || (res.retencionPagada / res.salarioBruto * 100))} %)</em>
+              <em>(${fmtPorc(res.retencionPagada / res.salarioBruto * 100)} %)</em>
             </strong>
           </div>
           <div class="desglose-separador"></div>
