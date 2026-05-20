@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1e3a5f">
+  <meta name="description" content="Descubre si estás pagando más IRPF del que te corresponde. Calculadora IRPF 2024 para trabajadores españoles.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AsesorFiscal">
+  <title>AsesorFiscal — Revisa tu IRPF</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app" class="app">
+
+  <!-- Barra de progreso -->
+  <div id="progress-bar" class="progress-bar" style="display:none">
+    <div id="progress-fill" class="progress-fill"></div>
+  </div>
+
+  <!-- Botón volver -->
+  <button id="btn-back" class="btn-back" style="display:none" aria-label="Volver al paso anterior">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19 12H5M12 5l-7 7 7 7"/>
+    </svg>
+  </button>
+
+  <!-- ========================================= -->
+  <!-- PANTALLA 0: Bienvenida                    -->
+  <!-- ========================================= -->
+  <section class="screen" id="screen-0" data-step="0">
+    <div class="welcome-wrap">
+      <div class="welcome-logo-wrap">
+        <img src="icons/icon.svg" alt="AsesorFiscal" class="welcome-logo" width="80" height="80">
+      </div>
+      <h1 class="welcome-titulo">AsesorFiscal</h1>
+      <p class="welcome-subtitulo">Descubre si estás pagando más<br>IRPF del que te corresponde</p>
+
+      <div class="welcome-features">
+        <div class="feature-item">
+          <span class="feature-check">✓</span>
+          <span>Calculadora IRPF 2024 actualizada</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-check">✓</span>
+          <span>Detecta deducciones no aplicadas</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-check">✓</span>
+          <span>Consejosrpersonalizados para ahorrar</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-check">✓</span>
+          <span>Datos 100% privados, sin servidor</span>
+        </div>
+      </div>
+
+      <button class="btn-primary btn-full" id="btn-start">
+        Analizar mi situación
+      </button>
+
+      <!-- Botón instalar PWA (oculto hasta beforeinstallprompt) -->
+      <button class="btn-instalar" id="btn-instalar" style="display:none">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Instalar app
+      </button>
+
+      <p class="welcome-nota">Solo 3 minutos · Compatible Android e iOS</p>
+    </div>
+  </section>
+
+  <!-- ========================================= -->
+  <!-- PANTALLA 1: Datos personales              -->
+  <!-- ========================================= -->
+  <section class="screen" id="screen-1" data-step="1">
+    <div class="screen-container">
+      <div class="screen-header">
+        <span id="step-label" class="step-label">Paso 1 de 4</span>
+        <h2 class="screen-titulo">Datos personales</h2>
+        <p class="screen-desc">Para calcular tu mínimo personal y los tramos autonómicos correctos.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="anoNacimiento">Año de nacimiento</label>
+        <input type="number" id="anoNacimiento" placeholder="Ej: 1985"
+          min="1924" max="2006" inputmode="numeric" autocomplete="bday-year">
+      </div>
+
+      <div class="form-group">
+        <label>Estado civil (a efectos IRPF)</label>
+        <div class="radio-group">
+          <label class="radio-opcion">
+            <input type="radio" name="estadoCivil" value="soltero" checked>
+            <span class="radio-content">
+              <span class="radio-titulo">Soltero/a o pareja sin casarse</span>
+              <span class="radio-desc">También casado/a con declaración individual</span>
+            </span>
+          </label>
+          <label class="radio-opcion">
+            <input type="radio" name="estadoCivil" value="casado_conjunto">
+            <span class="radio-content">
+              <span class="radio-titulo">Casado/a — declaración conjunta</span>
+              <span class="radio-desc">Reducción adicional de 3.400 €</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="ccaa">Comunidad Autónoma</label>
+        <div class="select-wrap">
+          <select id="ccaa">
+            <option value="andalucia">Andalucía</option>
+            <option value="aragon">Aragón</option>
+            <option value="asturias">Asturias</option>
+            <option value="baleares">Illes Balears</option>
+            <option value="canarias">Canarias</option>
+            <option value="cantabria">Cantabria</option>
+            <option value="castillaLaMancha">Castilla-La Mancha</option>
+            <option value="castillaYLeon">Castilla y León</option>
+            <option value="cataluna">Cataluña</option>
+            <option value="extremadura">Extremadura</option>
+            <option value="galicia">Galicia</option>
+            <option value="laRioja">La Rioja</option>
+            <option value="madrid" selected>Madrid</option>
+            <option value="murcia">Murcia</option>
+            <option value="navarra">Navarra (Régimen Foral)</option>
+            <option value="paisVasco">País Vasco (Régimen Foral)</option>
+            <option value="valencia">Comunitat Valenciana</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn-primary btn-full btn-siguiente" id="btn-next-1">
+        Continuar <span class="btn-arrow">→</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ========================================= -->
+  <!-- PANTALLA 2: Datos de nómina               -->
+  <!-- ========================================= -->
+  <section class="screen" id="screen-2" data-step="2">
+    <div class="screen-container">
+      <div class="screen-header">
+        <span class="step-label">Paso 2 de 4</span>
+        <h2 class="screen-titulo">Tu nómina</h2>
+        <p class="screen-desc">Introduce los datos de tu contrato. Los encontrarás en tu nómina o en tu contrato de trabajo.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="salarioBruto">Salario bruto anual (€)</label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">€</span>
+          <input type="number" id="salarioBruto" placeholder="Ej: 28000"
+            min="500" max="1000000" inputmode="decimal" autocomplete="off">
+        </div>
+        <span class="form-hint">El salario bruto aparece en tu contrato o en la casilla "Total devengos" de tu nómina.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="numPagas">Número de pagas al año</label>
+        <div class="select-wrap">
+          <select id="numPagas">
+            <option value="12">12 pagas</option>
+            <option value="14" selected>14 pagas (con extras)</option>
+            <option value="16">16 pagas</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="retencionActual">Retención IRPF actual (%)</label>
+        <div class="input-suffix-wrap">
+          <input type="number" id="retencionActual" placeholder="Ej: 15"
+            min="0" max="50" step="0.1" inputmode="decimal" autocomplete="off">
+          <span class="input-suffix">%</span>
+        </div>
+        <span class="form-hint">Mira el apartado "IRPF" o "Retención" en tu nómina mensual.</span>
+      </div>
+
+      <div class="info-card">
+        <span class="info-icon">ℹ️</span>
+        <span>La cotización a la Seguridad Social (~6,35 % de tu salario) se calcula automáticamente.</span>
+      </div>
+
+      <button class="btn-primary btn-full btn-siguiente" id="btn-next-2">
+        Continuar <span class="btn-arrow">→</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ========================================= -->
+  <!-- PANTALLA 3: Situación familiar            -->
+  <!-- ========================================= -->
+  <section class="screen" id="screen-3" data-step="3">
+    <div class="screen-container">
+      <div class="screen-header">
+        <span class="step-label">Paso 3 de 4</span>
+        <h2 class="screen-titulo">Situación familiar</h2>
+        <p class="screen-desc">Afecta directamente al mínimo personal y familiar, que reduce tu base imponible.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="numHijos">¿Cuántos hijos/as tienes a cargo? (menores de 25 años)</label>
+        <div class="select-wrap">
+          <select id="numHijos">
+            <option value="0" selected>Sin hijos</option>
+            <option value="1">1 hijo/a</option>
+            <option value="2">2 hijos/as</option>
+            <option value="3">3 hijos/as</option>
+            <option value="4">4 hijos/as</option>
+            <option value="5">5 o más hijos/as</option>
+          </select>
+        </div>
+        <div id="hijos-edades"></div>
+      </div>
+
+      <div class="form-group">
+        <label for="ascendientes65">Ascendientes a cargo (padres/abuelos que conviven) con más de 65 años</label>
+        <div class="select-wrap">
+          <select id="ascendientes65">
+            <option value="0" selected>Ninguno</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3 o más</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="ascendientes75">De los anteriores, ¿cuántos tienen más de 75 años?</label>
+        <div class="select-wrap">
+          <select id="ascendientes75">
+            <option value="0" selected>Ninguno</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3 o más</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>¿Tienes reconocida discapacidad?</label>
+        <div class="radio-group compact">
+          <label class="radio-opcion">
+            <input type="radio" name="discapPropia" value="0" checked>
+            <span class="radio-content"><span class="radio-titulo">No</span></span>
+          </label>
+          <label class="radio-opcion">
+            <input type="radio" name="discapPropia" value="33">
+            <span class="radio-content"><span class="radio-titulo">Sí, ≥ 33 %</span></span>
+          </label>
+          <label class="radio-opcion">
+            <input type="radio" name="discapPropia" value="65">
+            <span class="radio-content"><span class="radio-titulo">Sí, ≥ 65 %</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="check-label">
+          <input type="checkbox" id="esMadre">
+          <span>Soy mujer con hijos menores de 3 años y trabajo por cuenta ajena</span>
+        </label>
+        <label class="check-label mt-8">
+          <input type="checkbox" id="familiaNumerosa">
+          <span>Tengo título de familia numerosa (3 o más hijos)</span>
+        </label>
+        <div id="campo-fn-especial" style="display:none">
+          <label class="check-label mt-8 ml-24">
+            <input type="checkbox" id="familiaNumerosaEspecial">
+            <span>Familia numerosa de categoría especial (5+ hijos o 4 con discapacidad)</span>
+          </label>
+        </div>
+      </div>
+
+      <details class="details-bloque">
+        <summary>Discapacidad de familiares a cargo</summary>
+        <div class="details-body">
+          <div class="form-group-small-row">
+            <div class="form-group-small">
+              <label>Hijos con discapacidad 33-65 %</label>
+              <input type="number" id="descDiscap33" min="0" max="5" value="0" inputmode="numeric">
+            </div>
+            <div class="form-group-small">
+              <label>Hijos con discapacidad &gt;65 %</label>
+              <input type="number" id="descDiscap65" min="0" max="5" value="0" inputmode="numeric">
+            </div>
+          </div>
+          <div class="form-group-small-row">
+            <div class="form-group-small">
+              <label>Ascendientes discapacidad 33-65 %</label>
+              <input type="number" id="ascDiscap33" min="0" max="5" value="0" inputmode="numeric">
+            </div>
+            <div class="form-group-small">
+              <label>Ascendientes discapacidad &gt;65 %</label>
+              <input type="number" id="ascDiscap65" min="0" max="5" value="0" inputmode="numeric">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <button class="btn-primary btn-full btn-siguiente" id="btn-next-3">
+        Continuar <span class="btn-arrow">→</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ========================================= -->
+  <!-- PANTALLA 4: Deducciones                   -->
+  <!-- ========================================= -->
+  <section class="screen" id="screen-4" data-step="4">
+    <div class="screen-container">
+      <div class="screen-header">
+        <span class="step-label">Paso 4 de 4</span>
+        <h2 class="screen-titulo">Deducciones y gastos</h2>
+        <p class="screen-desc">Estos importes reducen directamente lo que pagas de IRPF.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="planPensiones">Aportación anual a plan de pensiones (€)</label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">€</span>
+          <input type="number" id="planPensiones" placeholder="0"
+            min="0" max="10000" inputmode="decimal">
+        </div>
+        <span class="form-hint">Límite individual 2024: 1.500 €/año (deducible de la base imponible).</span>
+      </div>
+
+      <div class="form-group">
+        <label for="cuotasSindicales">Cuotas sindicales anuales (€)</label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">€</span>
+          <input type="number" id="cuotasSindicales" placeholder="0"
+            min="0" max="5000" inputmode="decimal">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="check-label">
+          <input type="checkbox" id="movilidad">
+          <span>Tuve que cambiar de municipio de residencia por trabajo (movilidad geográfica)</span>
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label class="check-label">
+          <input type="checkbox" id="viviendaAnterior2013">
+          <span>Tengo hipoteca de vivienda habitual firmada <strong>antes del 1 de enero de 2013</strong></span>
+        </label>
+        <div id="campo-hipoteca" style="display:none" class="mt-12">
+          <label for="pagosHipoteca">Pagos de hipoteca anuales (capital + intereses, en €)</label>
+          <div class="input-prefix-wrap">
+            <span class="input-prefix">€</span>
+            <input type="number" id="pagosHipoteca" placeholder="0"
+              min="0" max="50000" inputmode="decimal">
+          </div>
+          <span class="form-hint">Deducción: 15 % hasta 9.040,40 € (máx. 1.356 €/año).</span>
+        </div>
+      </div>
+
+      <details class="details-bloque">
+        <summary>Otros gastos deducibles</summary>
+        <div class="details-body">
+          <div class="form-group">
+            <label for="gastoDefensa">Gastos de defensa jurídica laboral (€)</label>
+            <div class="input-prefix-wrap">
+              <span class="input-prefix">€</span>
+              <input type="number" id="gastoDefensa" placeholder="0"
+                min="0" max="300" inputmode="decimal">
+            </div>
+            <span class="form-hint">Máximo deducible: 300 €/año (art. 19 LIRPF).</span>
+          </div>
+        </div>
+      </details>
+
+      <button class="btn-primary btn-full btn-siguiente" id="btn-next-4">
+        Ver mi análisis fiscal <span class="btn-arrow">→</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ========================================= -->
+  <!-- PANTALLA 5: Resultado                     -->
+  <!-- ========================================= -->
+  <section class="screen" id="screen-5" data-step="5">
+    <div class="screen-container resultado-container">
+
+      <!-- Banner impacto -->
+      <div id="resultado-banner" class="resultado-banner"></div>
+
+      <!-- Aviso foral -->
+      <div id="aviso-foral" class="aviso-foral" style="display:none"></div>
+
+      <!-- Tipo efectivo (ring) -->
+      <div class="card" id="resultado-tipo"></div>
+
+      <!-- Desglose numérico -->
+      <div class="card" id="resultado-desglose"></div>
+
+      <!-- Consejos -->
+      <div class="card" id="resultado-consejos"></div>
+
+      <!-- Disclaimer -->
+      <div class="disclaimer-card">
+        <strong>⚠️ Aviso importante:</strong> Este cálculo es una estimación orientativa basada en los datos introducidos y en la normativa IRPF 2024. No sustituye el asesoramiento de un profesional fiscal. Para la declaración de la renta usa el borrador de AEAT o consulta a un gestor.
+      </div>
+
+      <!-- Acciones -->
+      <div class="resultado-acciones">
+        <button class="btn-secondary" id="btn-imprimir">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8"/>
+          </svg>
+          Guardar / Imprimir
+        </button>
+        <button class="btn-outline" id="btn-nuevo">
+          Nuevo análisis
+        </button>
+      </div>
+
+    </div>
+  </section>
+
+</div><!-- /#app -->
+
+<script src="js/irpf.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
