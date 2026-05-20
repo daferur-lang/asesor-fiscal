@@ -64,6 +64,24 @@
         Analizar mi situación
       </button>
 
+      <!-- Separador PDF -->
+      <div class="pdf-separador">
+        <span>o</span>
+      </div>
+
+      <!-- Botón subir PDF -->
+      <label class="btn-pdf-upload" for="pdf-input" id="btn-pdf-label">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
+        Subir PDF (nómina o declaración)
+      </label>
+      <input type="file" id="pdf-input" accept="application/pdf" style="display:none" aria-label="Subir PDF">
+      <p class="pdf-nota-welcome">Rellena el formulario automáticamente · Solo PDFs digitales</p>
+
       <!-- Botón instalar PWA (oculto hasta beforeinstallprompt) -->
       <button class="btn-instalar" id="btn-instalar" style="display:none">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -411,6 +429,20 @@
       <!-- Consejos -->
       <div class="card" id="resultado-consejos"></div>
 
+      <!-- Comparativa CCAA -->
+      <div class="card" id="resultado-comparativa">
+        <h3 class="card-titulo">¿Cuánto pagarías en otra comunidad?</h3>
+        <p class="comp-intro">Compara tu cuota IRPF con las 17 comunidades autónomas usando exactamente tus datos.</p>
+        <button class="btn-comp-calcular" id="btn-comparativa">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+            <line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+          Ver comparativa entre las 17 CCAA
+        </button>
+        <div id="comparativa-resultado" style="display:none"></div>
+      </div>
+
       <!-- Disclaimer -->
       <div class="disclaimer-card">
         <strong>⚠️ Aviso importante:</strong> Este cálculo es una estimación orientativa basada en los datos introducidos y en la normativa IRPF 2024. No sustituye el asesoramiento de un profesional fiscal. Para la declaración de la renta usa el borrador de AEAT o consulta a un gestor.
@@ -434,9 +466,61 @@
     </div>
   </section>
 
+  <!-- ========================================= -->
+  <!-- OVERLAY: Análisis PDF                     -->
+  <!-- ========================================= -->
+  <div id="pdf-overlay" class="pdf-overlay" style="display:none" role="dialog" aria-modal="true" aria-label="Resultado del análisis PDF">
+    <div class="pdf-overlay-card">
+      <!-- Estado: cargando -->
+      <div id="pdf-estado-cargando" class="pdf-estado">
+        <div class="pdf-spinner"></div>
+        <p class="pdf-estado-texto">Analizando tu documento…</p>
+        <p class="pdf-estado-sub">Esto solo tarda unos segundos</p>
+      </div>
+
+      <!-- Estado: error -->
+      <div id="pdf-estado-error" class="pdf-estado" style="display:none">
+        <div class="pdf-estado-icono error">✕</div>
+        <p class="pdf-estado-texto" id="pdf-error-msg">Error al leer el PDF</p>
+        <p class="pdf-estado-sub">Puedes continuar rellenando el formulario manualmente.</p>
+        <button class="btn-primary btn-full" id="btn-pdf-cerrar-error">Completar manualmente</button>
+      </div>
+
+      <!-- Estado: resultados -->
+      <div id="pdf-estado-resultado" class="pdf-estado" style="display:none">
+        <div class="pdf-estado-icono ok">✓</div>
+        <p class="pdf-estado-texto">Documento analizado</p>
+        <p class="pdf-tipo-badge" id="pdf-tipo-label"></p>
+
+        <div class="pdf-advertencia" id="pdf-advertencia" style="display:none"></div>
+
+        <div class="pdf-columnas">
+          <div class="pdf-col">
+            <div class="pdf-col-titulo encontrados">Datos encontrados</div>
+            <ul class="pdf-lista" id="pdf-lista-encontrados"></ul>
+          </div>
+          <div class="pdf-col">
+            <div class="pdf-col-titulo faltantes">Completar manualmente</div>
+            <ul class="pdf-lista faltante" id="pdf-lista-faltantes"></ul>
+          </div>
+        </div>
+
+        <div class="pdf-acciones">
+          <button class="btn-primary btn-full" id="btn-pdf-aplicar">
+            Usar estos datos y continuar →
+          </button>
+          <button class="btn-outline" id="btn-pdf-cancelar">
+            Rellenar manualmente
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /#app -->
 
 <script src="js/irpf.js"></script>
+<script src="js/pdf-reader.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

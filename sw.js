@@ -1,12 +1,13 @@
 'use strict';
 
-const CACHE_NAME = 'asesor-fiscal-v1';
+const CACHE_NAME = 'asesor-fiscal-v2';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './css/style.css',
   './js/irpf.js',
+  './js/pdf-reader.js',
   './js/app.js',
   './icons/icon.svg',
 ];

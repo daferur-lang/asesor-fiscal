@@ -10,6 +10,8 @@ const App = {
   paso: 0,
   totalPasos: 4,
   datos: {},
+  datosPDFExtraidos: null,
+  ultimoResultado: null,
 
   init() {
     this.datos = this.cargarDatos();
@@ -186,6 +188,7 @@ const App = {
   // ---- Cálculo y resultado ----
   calcularYMostrar() {
     const res = calcularIRPF(this.datos);
+    this.ultimoResultado = res;
     const consejos = obtenerConsejos(this.datos, res);
     this.renderResultado(res, consejos);
   },
@@ -358,6 +361,26 @@ const App = {
 
     // Poblar con datos guardados si existen
     this.poblarFormularios();
+
+    // PDF: activar input al pulsar botón label
+    document.getElementById('pdf-input')?.addEventListener('change', e => {
+      const file = e.target.files?.[0];
+      if (file) this.manejarArchivoPDF(file);
+    });
+
+    // PDF overlay: botones de acción
+    document.getElementById('btn-pdf-aplicar')?.addEventListener('click', () => this.aplicarDatosPDF());
+    document.getElementById('btn-pdf-cancelar')?.addEventListener('click', () => {
+      this.cerrarOverlay();
+      this.irAPaso(1);
+    });
+    document.getElementById('btn-pdf-cerrar-error')?.addEventListener('click', () => {
+      this.cerrarOverlay();
+      this.irAPaso(1);
+    });
+
+    // Comparativa CCAA
+    document.getElementById('btn-comparativa')?.addEventListener('click', () => this.renderComparativaCCAA());
   },
 
   renderCamposHijos(n) {
@@ -428,6 +451,146 @@ const App = {
       const extra = document.getElementById('campo-fn-especial');
       if (extra) extra.style.display = 'block';
     }
+  },
+
+  // ============================================================
+  // LECTOR DE PDF
+  // ============================================================
+
+  manejarArchivoPDF(file) {
+    this.mostrarOverlay('cargando');
+    procesarPDF(file)
+      .then(datos => {
+        if (datos._error) { this.mostrarOverlay('error', datos._error); return; }
+        this.datosPDFExtraidos = datos;
+        this.mostrarOverlay('resultado', datos);
+      })
+      .catch(err => this.mostrarOverlay('error', err.message || 'Error inesperado al procesar el PDF.'));
+  },
+
+  mostrarOverlay(estado, datos) {
+    const overlay = document.getElementById('pdf-overlay');
+    if (!overlay) return;
+    ['cargando', 'error', 'resultado'].forEach(s => {
+      const el = document.getElementById(`pdf-estado-${s}`);
+      if (el) el.style.display = s === estado ? 'flex' : 'none';
+    });
+    if (estado === 'error') {
+      const msg = document.getElementById('pdf-error-msg');
+      if (msg) msg.textContent = typeof datos === 'string' ? datos : 'Error al leer el PDF.';
+    }
+    if (estado === 'resultado' && datos) {
+      const { detectados, faltantes } = generarResumenCampos(datos);
+      const tipoLabel = document.getElementById('pdf-tipo-label');
+      if (tipoLabel) tipoLabel.textContent = datos._tipo === 'declaracion' ? '📄 Declaración de la Renta (Modelo 100)' : '📋 Nómina';
+      const adv = document.getElementById('pdf-advertencia');
+      if (adv) { adv.textContent = datos._advertencia || ''; adv.style.display = datos._advertencia ? 'block' : 'none'; }
+      const listaEnc = document.getElementById('pdf-lista-encontrados');
+      if (listaEnc) listaEnc.innerHTML = detectados.length > 0
+        ? detectados.map(d => `<li><strong>${d.label}:</strong> ${d.valor}</li>`).join('')
+        : '<li class="vacio">No se encontraron datos automáticamente</li>';
+      const listaFal = document.getElementById('pdf-lista-faltantes');
+      if (listaFal) listaFal.innerHTML = faltantes.length > 0
+        ? faltantes.map(f => `<li>${f}</li>`).join('')
+        : '<li class="ok">Todo detectado ✓</li>';
+    }
+    overlay.style.display = 'flex';
+  },
+
+  cerrarOverlay() {
+    const overlay = document.getElementById('pdf-overlay');
+    if (overlay) overlay.style.display = 'none';
+    const input = document.getElementById('pdf-input');
+    if (input) input.value = '';
+  },
+
+  aplicarDatosPDF() {
+    const d = this.datosPDFExtraidos;
+    if (!d) { this.cerrarOverlay(); this.irAPaso(1); return; }
+    if (d.salarioBruto)      this.datos.salarioBruto    = d.salarioBruto;
+    if (d.retencionActual != null) this.datos.retencionActual = d.retencionActual;
+    if (d.numPagas)          this.datos.numPagas         = d.numPagas;
+    if (d.estadoCivil)       this.datos.estadoCivil      = d.estadoCivil;
+    if (d.ccaa)              this.datos.ccaa             = d.ccaa;
+    if (d.anoNacimiento)     this.datos.anoNacimiento    = d.anoNacimiento;
+    this.guardarDatos();
+    this.cerrarOverlay();
+    this.poblarFormularios();
+    this.irAPaso(1);
+  },
+
+  // ============================================================
+  // COMPARATIVA ENTRE CCAA
+  // ============================================================
+
+  renderComparativaCCAA() {
+    if (!this.ultimoResultado || !this.datos?.salarioBruto) return;
+
+    const ccaas       = Object.keys(IRPF_2024.tramosCCAA);
+    const ccaaActual  = this.datos.ccaa || 'madrid';
+    const cuotaActual = this.ultimoResultado.pasos.cuotaLiquida;
+
+    const fmt     = n => Math.round(n).toLocaleString('es-ES');
+    const fmtPct  = n => Math.abs(n).toFixed(1).replace('.', ',');
+    const fmtDif  = (n, esActual) => {
+      if (esActual) return '—';
+      const r = Math.round(n);
+      if (Math.abs(r) < 5) return '≈ igual';
+      return (r > 0 ? '+' : '') + r.toLocaleString('es-ES') + ' €';
+    };
+
+    // Calcular todas las CCAA
+    const filas = ccaas.map(key => {
+      const res = calcularIRPF({ ...this.datos, ccaa: key });
+      return {
+        key,
+        nombre: IRPF_2024.tramosCCAA[key].nombre,
+        cuota:  res.pasos.cuotaLiquida,
+        tipo:   res.tipoEfectivo,
+        dif:    res.pasos.cuotaLiquida - cuotaActual,
+        foral:  !!IRPF_2024.tramosCCAA[key].foral,
+      };
+    }).sort((a, b) => a.cuota - b.cuota);
+
+    const minCuota = filas[0].cuota;
+    const maxCuota = filas[filas.length - 1].cuota;
+
+    const rows = filas.map(r => {
+      const esActual = r.key === ccaaActual;
+      const esMin    = !esActual && Math.abs(r.cuota - minCuota) < 1;
+      const esMax    = !esActual && Math.abs(r.cuota - maxCuota) < 1;
+      const claseFila = esActual ? 'comp-actual' : (esMin ? 'comp-min' : (esMax ? 'comp-max' : ''));
+      const claseDif  = esActual ? '' : (r.dif < -50 ? 'dif-ahorro' : r.dif > 50 ? 'dif-mas' : 'dif-neutral');
+      return `
+        <tr class="comp-fila ${claseFila}">
+          <td class="comp-nombre">
+            ${r.nombre}
+            ${esActual ? '<span class="comp-badge actual">Tu CCAA</span>' : ''}
+            ${esMin    ? '<span class="comp-badge min">Más barata</span>' : ''}
+            ${esMax    ? '<span class="comp-badge max">Más cara</span>' : ''}
+            ${r.foral  ? '<span class="comp-foral">*</span>' : ''}
+          </td>
+          <td>${fmt(r.cuota)} €</td>
+          <td>${fmtPct(r.tipo)} %</td>
+          <td class="${claseDif}">${fmtDif(r.dif, esActual)}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `
+      <div class="comp-tabla-wrap">
+        <table class="comp-tabla">
+          <thead>
+            <tr><th>Comunidad</th><th>Cuota IRPF</th><th>Tipo ef.</th><th>vs tu CCAA</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p class="comp-nota">* Navarra y País Vasco tienen régimen foral propio; cálculo aproximado.</p>
+      </div>`;
+
+    const el  = document.getElementById('comparativa-resultado');
+    const btn = document.getElementById('btn-comparativa');
+    if (el)  { el.innerHTML = html; el.style.display = 'block'; }
+    if (btn) btn.style.display = 'none';
   },
 
   // ---- PWA ----
