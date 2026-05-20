@@ -850,7 +850,9 @@ input::placeholder { color: var(--gris-400); }
    ============================================================ */
 @media print {
   .btn-back, .btn-imprimir, .btn-nuevo, .progress-bar,
-  .disclaimer-card, .resultado-acciones { display: none !important; }
+  .disclaimer-card, .resultado-acciones,
+  .pdf-overlay, .btn-comp-calcular, .pdf-separador,
+  .btn-pdf-upload, .pdf-nota-welcome { display: none !important; }
   .screen { display: flex !important; min-height: unset; }
   .screen:not(#screen-5) { display: none !important; }
   .resultado-container { padding: 0; }
