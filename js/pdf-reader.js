@@ -2,212 +2,299 @@
 
 // ============================================================
 // LECTOR DE PDF — AsesorFiscal
-// Usa PDF.js 2.16.105 (build UMD, expone window.pdfjsLib)
-// Las versiones 3.x en cdnjs son ES Modules y NO funcionan
+// PDF.js 2.16.105 UMD — expone window.pdfjsLib
+// Las versiones 3.x en cdnjs son ES Modules, no funcionan
 // con <script src> clásico.
 // ============================================================
 
 const PDF_CDN    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
 const PDF_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-// ---- Carga diferida de PDF.js (solo cuando el usuario sube un archivo) ----
+// ---- Carga diferida de PDF.js ----
 function cargarPDFJS() {
   return new Promise((resolve, reject) => {
-    // Ya cargado previamente
-    if (window.pdfjsLib) {
-      resolve(window.pdfjsLib);
-      return;
-    }
-
+    if (window.pdfjsLib) { resolve(window.pdfjsLib); return; }
     const script = document.createElement('script');
     script.src = PDF_CDN;
-
     script.onload = () => {
       if (window.pdfjsLib) {
-        // Indicar el worker (mismo CDN, versión UMD compatible)
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER;
         resolve(window.pdfjsLib);
       } else {
-        reject(new Error(
-          'PDF.js cargó pero no expuso window.pdfjsLib. ' +
-          'Comprueba tu conexión a internet.'
-        ));
+        reject(new Error('PDF.js cargó pero no expuso window.pdfjsLib.'));
       }
     };
-
     script.onerror = () => reject(new Error(
-      'No se pudo descargar PDF.js desde la CDN. ' +
-      'Comprueba tu conexión a internet e inténtalo de nuevo.'
+      'No se pudo descargar PDF.js desde la CDN. Comprueba tu conexión.'
     ));
-
     document.head.appendChild(script);
   });
 }
 
-// ---- Extraer texto de todas las páginas del PDF (máx. 15) ----
+// ---- Extraer texto reconstruyendo líneas visuales por coordenada Y ----
+// PDF.js devuelve ítems sueltos con posición (x, y). Los agrupamos por Y
+// para reconstruir las filas del documento tal como se ven, luego los
+// ordenamos de izquierda a derecha dentro de cada fila.
 async function extraerTextoPDF(file) {
   const pdfjs  = await cargarPDFJS();
   const buffer = await file.arrayBuffer();
+  const pdf    = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
 
-  const loadTask = pdfjs.getDocument({ data: new Uint8Array(buffer) });
-  const pdf      = await loadTask.promise;
-
-  let texto = '';
+  const todasLineas = [];
   const maxPags = Math.min(pdf.numPages, 15);
 
-  for (let i = 1; i <= maxPags; i++) {
-    const pagina   = await pdf.getPage(i);
-    const contenido = await pagina.getTextContent();
-    // Unir ítems; añadir espacio entre columnas y salto entre páginas
-    texto += contenido.items.map(item => item.str).join(' ') + '\n';
+  for (let p = 1; p <= maxPags; p++) {
+    const pagina  = await pdf.getPage(p);
+    const content = await pagina.getTextContent();
+
+    // Agrupar ítems por Y redondeada (tolerancia 4 px para subpíxeles)
+    const byY = new Map();
+    for (const item of content.items) {
+      if (!item.str) continue;
+      const y = Math.round(item.transform[5] / 4) * 4;
+      if (!byY.has(y)) byY.set(y, []);
+      byY.get(y).push({ x: item.transform[4], w: item.width || 0, str: item.str });
+    }
+
+    // Ordenar filas de arriba a abajo (Y mayor = más arriba en PDF.js)
+    const ysOrdenados = [...byY.keys()].sort((a, b) => b - a);
+    for (const y of ysOrdenados) {
+      const fila = byY.get(y).sort((a, b) => a.x - b.x);
+
+      // Unir ítems: espacio solo si hay hueco real entre ellos
+      let linea = '';
+      let prevRight = null;
+      for (const item of fila) {
+        if (prevRight !== null) {
+          const gap = item.x - prevRight;
+          linea += gap > 6 ? ' ' : '';
+        }
+        linea += item.str;
+        prevRight = item.x + item.w;
+      }
+
+      // Normalizar artefactos tipográficos en números: "1 . 234 , 56" → "1.234,56"
+      linea = linea
+        .replace(/(\d)\s+\.\s+(\d)/g, '$1.$2')
+        .replace(/(\d)\s+,\s+(\d)/g,  '$1,$2')
+        .trim();
+
+      if (linea) todasLineas.push(linea);
+    }
+    todasLineas.push(''); // separador de página
   }
 
-  return texto;
+  return todasLineas;
 }
 
-// ---- Parsear importe en formato español: "1.234,56" → 1234.56 ----
+// ---- Parsear importe español: "1.234,56" → 1234.56 ----
 function parsearImporte(str) {
   if (!str) return null;
-  const limpio = str.trim().replace(/\./g, '').replace(',', '.');
-  const num = parseFloat(limpio);
-  return isNaN(num) ? null : num;
+  const limpio = str.trim()
+    .replace(/\s*\.\s*/g, '.')
+    .replace(/\s*,\s*/g,  ',')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const n = parseFloat(limpio);
+  return isNaN(n) ? null : n;
 }
 
-// ---- Detectar tipo de documento ----
-function detectarTipo(texto) {
-  const t = texto.toLowerCase();
-  if (/modelo\s*100|declaraci[oó]n\s+(anual\s+)?de\s+(la\s+)?renta|renta\s*20\d\d|agencia\s+tributaria|irpf\s+20\d\d/.test(t)) {
-    return 'declaracion';
-  }
-  if (/n[oó]mina|recibo\s+de\s+salario|total\s+devengos|l[ií]quido\s+a\s+percibir|n[uú]mero\s+de\s+trabajador|datos\s+del\s+trabajador/.test(t)) {
-    return 'nomina';
-  }
-  // Si no se detecta tipo claro, asumir nómina
-  return 'nomina';
+// ---- Extraer todos los importes de una línea ----
+function importesDeLinea(linea) {
+  const norm = linea
+    .replace(/(\d)\s*\.\s*(\d)/g, '$1.$2')
+    .replace(/(\d)\s*,\s*(\d)/g,  '$1,$2');
+  const matches = [...norm.matchAll(/\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+,\d{1,2}/g)];
+  return matches.map(m => parsearImporte(m[0])).filter(n => n !== null);
 }
 
-// ---- Extraer datos de una nómina española ----
-function extraerDeNomina(texto) {
-  const datos = {};
+function primerImporte(linea) {
+  const lista = importesDeLinea(linea);
+  return lista.length ? lista[0] : null;
+}
 
-  // Salario bruto mensual — varios formatos posibles
-  const patronesBruto = [
-    /total\s+devengos?\s*[:\-]?\s*([\d.,]+)/i,
-    /total\s+bruto\s*[:\-]?\s*([\d.,]+)/i,
-    /importe\s+bruto\s*[:\-]?\s*([\d.,]+)/i,
-    /retribuci[oó]n\s+bruta\s*[:\-]?\s*([\d.,]+)/i,
-    /salario\s+bruto\s*[:\-]?\s*([\d.,]+)/i,
-    /total\s+percepciones\s*[:\-]?\s*([\d.,]+)/i,
-  ];
-  for (const p of patronesBruto) {
-    const m = texto.match(p);
-    if (m) {
-      const importe = parsearImporte(m[1]);
-      if (importe && importe > 100 && importe < 200000) {
-        datos._brutoMensual = importe;
-        const esMensual = importe < 8000; // heurística
-        datos._esMensual = esMensual;
-        datos.salarioBruto = esMensual ? Math.round(importe * 14 * 100) / 100 : importe;
-        datos.numPagas = 14;
-        break;
+function ultimoImporte(linea) {
+  const lista = importesDeLinea(linea);
+  return lista.length ? lista[lista.length - 1] : null;
+}
+
+// ---- Buscar un importe cerca de una etiqueta ----
+// Devuelve el último importe de la línea que contiene la etiqueta,
+// o el primero de las `ventana` líneas siguientes si la línea de la
+// etiqueta no tiene número (caso columna separada).
+function buscarImporteJunto(lineas, patronEtiqueta, ventana) {
+  ventana = ventana || 3;
+  for (let i = 0; i < lineas.length; i++) {
+    if (!patronEtiqueta.test(lineas[i])) continue;
+
+    const v = ultimoImporte(lineas[i]);
+    if (v !== null) return v;
+
+    for (let j = i + 1; j <= i + ventana && j < lineas.length; j++) {
+      if (!lineas[j].trim()) continue;
+      const vj = primerImporte(lineas[j]);
+      if (vj !== null) return vj;
+    }
+  }
+  return null;
+}
+
+// ---- Buscar porcentaje cerca de una etiqueta ----
+function buscarPorcentajeJunto(lineas, patronEtiqueta, ventana) {
+  ventana = ventana || 3;
+  for (let i = 0; i < lineas.length; i++) {
+    if (!patronEtiqueta.test(lineas[i])) continue;
+
+    for (let j = i; j <= i + ventana && j < lineas.length; j++) {
+      // "15,00 %" o "15%" o "15,00%" — admitir espacio antes de %
+      const mPct = lineas[j].match(/(\d{1,2}(?:[,.]\d{1,2})?)\s*%/);
+      if (mPct) {
+        const pct = parsearImporte(mPct[1]);
+        if (pct !== null && pct >= 0 && pct <= 50) return pct;
       }
     }
   }
+  return null;
+}
 
-  // IRPF % — varias representaciones habituales en nóminas
-  const mIRPF =
-    texto.match(/i\.?r\.?p\.?f\.?\s*[\(:\-]?\s*([\d]+(?:[,.][\d]{1,2})?)\s*%/i) ||
-    texto.match(/retenci[oó]n\s+(?:irpf|fiscal)\s*[:\-]?\s*([\d]+(?:[,.][\d]{1,2})?)\s*%/i) ||
-    texto.match(/(?:retenci[oó]n|irpf)\D{0,20}([\d]+[,.][\d]{1,2})\s*%/i);
-  if (mIRPF) {
-    const pct = parsearImporte(mIRPF[1]);
-    if (pct !== null && pct >= 0 && pct <= 50) datos.retencionActual = pct;
+// ---- Detectar tipo de documento ----
+function detectarTipo(lineas) {
+  const texto = lineas.join('\n').toLowerCase();
+  if (/modelo\s*100|agencia\s+tributaria|renta\s+20\d\d|declaraci[oó]n.*renta/.test(texto)) {
+    return 'declaracion';
+  }
+  if (/n[oó]mina|recibo\s*de\s*salario|total\s+devengos?|l[ií]quido\s+a\s+percibir/.test(texto)) {
+    return 'nomina';
+  }
+  // Por defecto asumir nómina
+  return 'nomina';
+}
+
+// ---- Extraer datos de nómina española ----
+function extraerDeNomina(lineas) {
+  const datos = {};
+  const texto = lineas.join('\n');
+
+  // --- Salario bruto mensual ---
+  const etiquetasBruto = [
+    /total\s+devengos?/i,
+    /total\s+bruto/i,
+    /importe\s+bruto/i,
+    /retribuci[oó]n\s+bruta/i,
+    /salario\s+bruto/i,
+    /total\s+percepciones?/i,
+    /total\s+haberes/i,
+    /total\s+remuneraci[oó]n/i,
+  ];
+  for (const e of etiquetasBruto) {
+    const v = buscarImporteJunto(lineas, e);
+    if (v !== null && v > 100 && v < 200000) {
+      datos._brutoMensual = v;
+      const esMensual = v < 10000;
+      datos._esMensual = esMensual;
+      datos.salarioBruto = esMensual ? Math.round(v * 14 * 100) / 100 : v;
+      datos.numPagas = 14;
+      break;
+    }
   }
 
-  // Número de pagas
+  // --- Retención IRPF % ---
+  const etiquetasIRPF = [
+    /i\.?\s*r\.?\s*p\.?\s*f\.?/i,
+    /retenci[oó]n\s+fiscal/i,
+    /retenci[oó]n\s+irpf/i,
+    /retenci[oó]n\s+a\s+cuenta/i,
+  ];
+  for (const e of etiquetasIRPF) {
+    const pct = buscarPorcentajeJunto(lineas, e);
+    if (pct !== null) { datos.retencionActual = pct; break; }
+  }
+
+  // --- Número de pagas ---
   if (/14\s+pagas|catorce\s+pagas/i.test(texto)) datos.numPagas = 14;
   else if (/12\s+pagas|doce\s+pagas/i.test(texto)) datos.numPagas = 12;
 
-  // Estado civil (cuando aparece en los datos del trabajador)
-  if (/casado/i.test(texto) && !/soltero/i.test(texto)) datos.estadoCivil = 'casado_conjunto';
-  else if (/soltero|viudo|divorciado|separado/i.test(texto)) datos.estadoCivil = 'soltero';
+  // --- Estado civil ---
+  if (/casad[oa]/i.test(texto) && !/solter[oa]/i.test(texto)) {
+    datos.estadoCivil = 'casado_conjunto';
+  } else if (/solter[oa]|viud[oa]|divorciad[oa]|separad[oa]/i.test(texto)) {
+    datos.estadoCivil = 'soltero';
+  }
 
   datos._tipo = 'nomina';
   if (datos._esMensual && datos._brutoMensual) {
     datos._advertencia =
-      `Salario mensual detectado: ${datos._brutoMensual.toLocaleString('es-ES')} €. ` +
-      `Estimado anual ×14 pagas = ${datos.salarioBruto?.toLocaleString('es-ES')} €. ` +
-      `Ajusta si tu convenio es diferente.`;
+      'Salario mensual detectado: ' + datos._brutoMensual.toLocaleString('es-ES') + ' €. ' +
+      'Estimado anual ×14 pagas = ' + (datos.salarioBruto ? datos.salarioBruto.toLocaleString('es-ES') : '?') + ' €. ' +
+      'Ajusta si tu convenio usa menos pagas.';
   }
 
   return datos;
 }
 
-// ---- Extraer datos del Modelo 100 AEAT (declaración de la renta) ----
-function extraerDeDeclaracion(texto) {
+// ---- Extraer datos del Modelo 100 AEAT ----
+function extraerDeDeclaracion(lineas) {
   const datos = {};
+  const texto = lineas.join('\n');
 
-  // Rendimientos íntegros del trabajo
-  const patronesBruto = [
-    /rendimientos\s+[ií]ntegros\s+del\s+trabajo[^0-9]*([\d.,]+)/i,
-    /rendimientos\s+del\s+trabajo[^0-9]*([\d.,]+)/i,
-    /ingresos\s+[ií]ntegros\s+del\s+trabajo[^0-9]*([\d.,]+)/i,
-    /0011\D+([\d.,]+)/,   // casilla 0011
-    /0015\D+([\d.,]+)/,   // casilla alternativa
+  // --- Rendimientos íntegros del trabajo (casilla 0011) ---
+  const etiquetasBruto = [
+    /rendimientos?\s+[ií]ntegros?\s+del\s+trabajo/i,
+    /rendimientos?\s+del\s+trabajo/i,
+    /ingresos?\s+[ií]ntegros?\s+del\s+trabajo/i,
+    /\b0011\b/,
+    /\b011\b/,
   ];
-  for (const p of patronesBruto) {
-    const m = texto.match(p);
-    if (m) {
-      const importe = parsearImporte(m[1]);
-      if (importe && importe > 1000) { datos.salarioBruto = importe; break; }
-    }
+  for (const e of etiquetasBruto) {
+    const v = buscarImporteJunto(lineas, e, 4);
+    if (v !== null && v > 500) { datos.salarioBruto = v; break; }
   }
 
-  // Retenciones del trabajo (€)
-  const patronesRet = [
-    /retenciones\s+e\s+ingresos\s+a\s+cuenta\s+del\s+trabajo[^0-9]*([\d.,]+)/i,
-    /retenciones\s+e\s+ingresos\s+a\s+cuenta[^0-9]*([\d.,]+)/i,
-    /total\s+retenciones[^0-9]*([\d.,]+)/i,
-    /0596\D+([\d.,]+)/,
-    /0593\D+([\d.,]+)/,
+  // --- Retenciones e ingresos a cuenta del trabajo (casilla 0596) ---
+  const etiquetasRet = [
+    /retenciones?\s+e\s+ingresos?\s+a\s+cuenta\s+del\s+trabajo/i,
+    /retenciones?\s+e\s+ingresos?\s+a\s+cuenta/i,
+    /total\s+retenciones?/i,
+    /\b0596\b/,
+    /\b0593\b/,
   ];
-  for (const p of patronesRet) {
-    const m = texto.match(p);
-    if (m) {
-      const importe = parsearImporte(m[1]);
-      if (importe && importe > 0) { datos._retencionesEuros = importe; break; }
-    }
+  for (const e of etiquetasRet) {
+    const v = buscarImporteJunto(lineas, e, 4);
+    if (v !== null && v > 0) { datos._retencionesEuros = v; break; }
   }
 
-  // Calcular % de retención
+  // Calcular % retención a partir de importes
   if (datos.salarioBruto && datos._retencionesEuros) {
     const pct = (datos._retencionesEuros / datos.salarioBruto) * 100;
-    datos.retencionActual = Math.round(pct * 10) / 10;
+    if (pct > 0 && pct <= 50) datos.retencionActual = Math.round(pct * 10) / 10;
   }
 
-  // Estado civil
-  if (/casado|c[oó]nyuge/i.test(texto)) datos.estadoCivil = 'casado_conjunto';
-  else if (/soltero|viudo|divorciado|separado/i.test(texto)) datos.estadoCivil = 'soltero';
+  // --- Estado civil ---
+  if (/tributaci[oó]n\s+conjunta|casad[oa]/i.test(texto)) {
+    datos.estadoCivil = 'casado_conjunto';
+  } else if (/tributaci[oó]n\s+individual|solter[oa]|viud[oa]|divorciad[oa]/i.test(texto)) {
+    datos.estadoCivil = 'soltero';
+  }
 
-  // Comunidad Autónoma
+  // --- Comunidad Autónoma ---
   const ccaaMap = [
-    [/andaluc[ií]/i,                                'andalucia'],
-    [/arag[oó]n/i,                                  'aragon'],
-    [/asturias/i,                                   'asturias'],
-    [/baleares|illes balears/i,                     'baleares'],
-    [/canarias/i,                                   'canarias'],
-    [/cantabria/i,                                  'cantabria'],
-    [/castilla.la mancha/i,                         'castillaLaMancha'],
-    [/castilla y le[oó]n/i,                         'castillaYLeon'],
-    [/catalu[nñ]/i,                                 'cataluna'],
-    [/extremadura/i,                                'extremadura'],
-    [/galicia/i,                                    'galicia'],
-    [/la rioja/i,                                   'laRioja'],
-    [/madrid/i,                                     'madrid'],
-    [/murcia/i,                                     'murcia'],
-    [/navarra/i,                                    'navarra'],
-    [/pa[ií]s vasco|euskadi|bizkaia|gipuzkoa|[aá]lava/i, 'paisVasco'],
-    [/comunitat valenciana|pa[ií]s valenci[aà]/i,   'valencia'],
+    [/andaluc[ií]/i,                                     'andalucia'],
+    [/arag[oó]n/i,                                       'aragon'],
+    [/asturias/i,                                        'asturias'],
+    [/baleares|illes\s*balears/i,                        'baleares'],
+    [/canarias/i,                                        'canarias'],
+    [/cantabria/i,                                       'cantabria'],
+    [/castilla[- ]+la\s+mancha/i,                        'castillaLaMancha'],
+    [/castilla\s+y\s+le[oó]n/i,                          'castillaYLeon'],
+    [/catalu[nñ]|catalunya/i,                            'cataluna'],
+    [/extremadura/i,                                     'extremadura'],
+    [/galicia/i,                                         'galicia'],
+    [/la\s+rioja/i,                                      'laRioja'],
+    [/madrid/i,                                          'madrid'],
+    [/murcia/i,                                          'murcia'],
+    [/navarra/i,                                         'navarra'],
+    [/pa[ií]s\s+vasco|euskadi|bizkaia|gipuzkoa|[aá]lava/i, 'paisVasco'],
+    [/comunitat\s+valenciana|pa[ií]s\s+valenci[aà]/i,    'valencia'],
   ];
   for (const [patron, clave] of ccaaMap) {
     if (patron.test(texto)) { datos.ccaa = clave; break; }
@@ -218,62 +305,57 @@ function extraerDeDeclaracion(texto) {
 }
 
 // ============================================================
-// FUNCIÓN PRINCIPAL
+// FUNCIÓN PRINCIPAL (API pública)
 // ============================================================
 async function procesarPDF(file) {
-  // Validaciones básicas antes de intentar cargar PDF.js
   if (!file) {
     return { _error: 'No se recibió ningún archivo.' };
   }
   if (file.type !== 'application/pdf' && !file.name?.toLowerCase().endsWith('.pdf')) {
-    return { _error: 'El archivo no parece ser un PDF. Selecciona un archivo con extensión .pdf.' };
+    return { _error: 'El archivo no es un PDF. Selecciona un archivo .pdf.' };
   }
   if (file.size > 25 * 1024 * 1024) {
-    return { _error: 'El PDF supera los 25 MB. Usa un archivo más pequeño.' };
+    return { _error: 'El PDF supera los 25 MB.' };
   }
   if (file.size === 0) {
     return { _error: 'El archivo PDF está vacío.' };
   }
 
   try {
-    const texto = await extraerTextoPDF(file);
-
-    // Verificar que el PDF contenía texto real (no escaneado)
-    const palabrasUtiles = texto.trim().split(/\s+/).filter(w => w.length > 1).length;
+    const lineas = await extraerTextoPDF(file);
+    const palabrasUtiles = lineas.join(' ').trim().split(/\s+/).filter(w => w.length > 1).length;
 
     if (palabrasUtiles < 15) {
       return {
-        _tipo: 'escaneado',
-        _error:
-          'El PDF parece contener solo imágenes (escaneado o fotografiado). ' +
-          'La app solo puede leer PDFs digitales con texto seleccionable, ' +
-          'como los generados por programas de nóminas o la web de la AEAT.',
+        _tipo:  'escaneado',
+        _error: 'El PDF parece ser una imagen escaneada. ' +
+                'La app solo lee PDFs digitales con texto seleccionable ' +
+                '(generados por programas de nóminas o descargados de la AEAT).',
       };
     }
 
-    const tipo  = detectarTipo(texto);
+    const tipo  = detectarTipo(lineas);
     const datos = tipo === 'declaracion'
-      ? extraerDeDeclaracion(texto)
-      : extraerDeNomina(texto);
+      ? extraerDeDeclaracion(lineas)
+      : extraerDeNomina(lineas);
 
     datos._palabrasDetectadas = palabrasUtiles;
     return datos;
 
   } catch (err) {
-    // Mensaje de error legible para el usuario
     let msg = 'Error al procesar el PDF.';
-    if (err.message?.includes('CDN') || err.message?.includes('descargar')) {
+    if (err.message && (err.message.includes('CDN') || err.message.includes('descargar'))) {
       msg = err.message;
-    } else if (err.message?.includes('password') || err.message?.includes('encrypted')) {
+    } else if (err.message && (err.message.includes('password') || err.message.includes('encrypted'))) {
       msg = 'El PDF está protegido con contraseña. Quítale la contraseña e inténtalo de nuevo.';
-    } else if (err.message?.includes('Invalid PDF')) {
+    } else if (err.message && err.message.includes('Invalid PDF')) {
       msg = 'El archivo no es un PDF válido o está dañado.';
     }
     return { _error: msg };
   }
 }
 
-// ---- Generar resumen de campos detectados / faltantes ----
+// ---- Generar resumen de campos detectados / faltantes (API pública) ----
 function generarResumenCampos(datos) {
   const campos = [
     { key: 'salarioBruto',    label: 'Salario bruto anual' },
@@ -290,11 +372,11 @@ function generarResumenCampos(datos) {
     const valor = datos[campo.key];
     if (valor !== undefined && valor !== null && valor !== '') {
       let mostrar = String(valor);
-      if (campo.key === 'salarioBruto')    mostrar = `${Number(valor).toLocaleString('es-ES')} €`;
-      if (campo.key === 'retencionActual') mostrar = `${valor} %`;
+      if (campo.key === 'salarioBruto')    mostrar = Number(valor).toLocaleString('es-ES') + ' €';
+      if (campo.key === 'retencionActual') mostrar = valor + ' %';
       if (campo.key === 'estadoCivil')     mostrar = valor === 'casado_conjunto' ? 'Casado/a (conjunta)' : 'Soltero/a o individual';
       if (campo.key === 'ccaa' && typeof IRPF_2024 !== 'undefined') {
-        mostrar = IRPF_2024.tramosCCAA[valor]?.nombre || valor;
+        mostrar = IRPF_2024.tramosCCAA[valor] ? IRPF_2024.tramosCCAA[valor].nombre : valor;
       }
       detectados.push({ label: campo.label, valor: mostrar });
     } else {
